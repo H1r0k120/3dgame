@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Platformer</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    canvas { display: block; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 20px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 8px 12px;
+      border-radius: 6px;
+      z-index: 1;
+    }
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 32px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+    #restartbtn {
+      position: absolute;
+      top: calc(50% + 60px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: white;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 8px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">Score: 0 | Time: 60 | Life: 3</div>
+  <div id="message">Game Over</div>
+  <div id="restartbtn">Restart</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script>
+    let scene, camera, renderer;
+    let player, platforms = [], coins = [], enemies = [], goal;
+    let keys = {};
+    let velocity = new THREE.Vector3(0, 0, 0);
+    let gravity = -0.01;
+    let onGround = false;
+    let score = 0;
+    let timeLeft = 60;
+    let life = 3;
+    let gameEnded = false;
+
+    const hud = document.getElementById('hud');
+    const message = document.getElementById('message');
+    const restartBtn = document.getElementById('restartbtn');
+
+    function updateHUD() {
+      hud.textContent = `Score: ${score} | Time: ${timeLeft} | Life: ${life}`;
+    }
+
+    function endGame(text) {
+      gameEnded = true;
+      message.textContent = text;
+      message.style.display = 'block';
+      restartBtn.style.display = 'block';
+    }
+
+    restartBtn.onclick = () => location.reload();
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xbfd1e5);
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 5, 10);
+      camera.lookAt(0, 1, 0);
+
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(10, 10, 10);
+      scene.add(light);
+
+      const ambient = new THREE.AmbientLight(0x404040);
+      scene.add(ambient);
+
+      // Player
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+      player = new THREE.Mesh(geometry, material);
+      player.position.set(0, 2.25, 0);
+      scene.add(player);
+
+      // Platforms
+      const platData = [
+        [0, 0, 0], [3, 1, -3], [-3, 2, -6], [0, 3, -9], [4, 4, -12]
+      ];
+      platData.forEach(p => createPlatform(...p));
+
+      // Coins
+      platforms.forEach(p => {
+        const c = new THREE.Mesh(
+          new THREE.SphereGeometry(0.3, 16, 16),
+          new THREE.MeshStandardMaterial({ color: 0xffff00 })
+        );
+        c.position.copy(p.position);
+        c.position.y += 1;
+        scene.add(c);
+        coins.push(c);
+      });
+
+      // Enemies
+      const enemy = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x0000ff })
+      );
+      enemy.position.set(3, 1.5, -3);
+      enemy.direction = 1;
+      scene.add(enemy);
+      enemies.push(enemy);
+
+      // Goal
+      goal = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({ color: 0x00ffff })
+      );
+      goal.position.set(4, 5, -13);
+      scene.add(goal);
+
+      // Timer
+      setInterval(() => {
+        if (!gameEnded) {
+          timeLeft--;
+          updateHUD();
+          if (timeLeft <= 0) endGame("Time's Up!");
+        }
+      }, 1000);
+
+      updateHUD();
+      animate();
+    }
+
+    function createPlatform(x, y, z) {
+      const geometry = new THREE.BoxGeometry(5, 0.5, 5);
+      const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+      const platform = new THREE.Mesh(geometry, material);
+      platform.position.set(x, y, z);
+      platform.receiveShadow = true;
+      scene.add(platform);
+      platforms.push(platform);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (gameEnded) return;
+
+      velocity.y += gravity;
+      player.position.y += velocity.y;
+
+      if (keys['ArrowLeft']) player.position.x -= 0.1;
+      if (keys['ArrowRight']) player.position.x += 0.1;
+      if (keys['ArrowUp']) player.position.z -= 0.1;
+      if (keys['ArrowDown']) player.position.z += 0.1;
+
+      onGround = false;
+      platforms.forEach(p => {
+        const minY = p.position.y + 0.25;
+        const withinX = Math.abs(player.position.x - p.position.x) < 2.5;
+        const withinZ = Math.abs(player.position.z - p.position.z) < 2.5;
+        const falling = velocity.y <= 0;
+        if (withinX && withinZ && player.position.y >= minY && player.position.y <= minY + 0.2 && falling) {
+          velocity.y = 0;
+          player.position.y = minY;
+          onGround = true;
+        }
+      });
+
+      // Coin collection
+      coins = coins.filter(coin => {
+        if (player.position.distanceTo(coin.position) < 0.6) {
+          scene.remove(coin);
+          score += 10;
+          updateHUD();
+          return false;
+        }
+        return true;
+      });
+
+      // Enemy collision
+      enemies.forEach(enemy => {
+        enemy.position.x += 0.03 * enemy.direction;
+        if (enemy.position.x > 4 || enemy.position.x < 2) enemy.direction *= -1;
+        if (player.position.distanceTo(enemy.position) < 0.7) {
+          life--;
+          updateHUD();
+          player.position.set(0, 2.5, 0);
+          if (life <= 0) endGame("Game Over");
+        }
+      });
+
+      // Goal
+      if (player.position.distanceTo(goal.position) < 0.7) {
+        endGame("You Win!");
+      }
+
+      if (player.position.y < -10) {
+        life--;
+        updateHUD();
+        player.position.set(0, 2.5, 0);
+        if (life <= 0) endGame("Fell Out!");
+      }
+
+      camera.position.x = player.position.x;
+      camera.position.z = player.position.z + 10;
+      camera.lookAt(player.position);
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('keydown', e => {
+      keys[e.key] = true;
+      if (e.key === ' ' && onGround) {
+        velocity.y = 0.2;
+        onGround = false;
+      }
+    });
+
+    window.addEventListener('keyup', e => keys[e.key] = false);
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    init();
+  </script>
+</body>
+</html>
